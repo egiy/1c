@@ -1,0 +1,67 @@
+name: Run Node Script
+
+on:
+  workflow_dispatch:
+  #schedule:
+    #- cron: '*/15 * * * *'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ac repo
+        uses: actions/checkout@v4
+        with:
+          repository: egiy/1c
+          ref: main
+          token: ${{ secrets.CD }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install axios moment fs.promises
+
+      - name: Run script
+        env:
+          GT: ${{ secrets.GT }}
+          KEY: ${{ secrets.KEY }}
+        
+        run: node 1.js
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: egiy/1d
+          ref: main
+          path: 1d
+          token: ${{ secrets.CD }}
+
+      - name: Copy s.json to dc
+        run: |
+          mkdir -p 1d/logs
+          cp /tmp/s.json 1d/logs/s.json
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          cd 1d
+          git add .
+          modified=$(git status --porcelain)
+          if [ -n "$modified" ]; then
+              echo "changes=true" >> $GITHUB_OUTPUT
+          else
+              echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push changes
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          cd 1d
+          git config --global user.name 'tgiy'
+          git config --global user.email 'tgiy@action.com'
+          git commit -m "Update s.json"
+          git remote set-url origin https://egiy:${{ secrets.CD }}@github.com/egiy/1d.git
+          git pull --rebase origin main
+          git push origin main
